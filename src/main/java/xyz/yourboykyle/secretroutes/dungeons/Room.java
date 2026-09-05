@@ -49,6 +49,7 @@ public class Room {
     private List<RouteVariantSelector.RouteVariant> routeVariants = List.of();
     private int selectedRouteIndex = -1;
     private double selectedRouteDistanceSquared = Double.POSITIVE_INFINITY;
+    private final RoutePositionCache positionCache = new RoutePositionCache();
     int c = 0;
 
     public Room(String roomName) {
@@ -144,6 +145,7 @@ public class Room {
         RouteVariantSelector.RouteVariant route = routeVariants.get(routeIndex);
         selectedRouteIndex = routeIndex;
         currentSecretRoute = route.steps();
+        invalidatePositionCache();
         currentSecretIndex = 0;
         updateWaypoints();
         SecretUtils.clearEtherwarpTargetTracking();
@@ -174,55 +176,43 @@ public class Room {
     }
 
     public BlockPos getSecretLocation() {
+        RoutePositionCache.Position position = getSecretPosition();
+        return position == null ? null : position.block();
+    }
+
+    RoutePositionCache.Position getSecretPosition() {
         if (currentSecretWaypoints == null || !currentSecretWaypoints.has("secret") || currentSecretWaypoints.get("secret").isJsonNull()) return null;
 
         JsonObject secretObj = currentSecretWaypoints.getAsJsonObject("secret");
         if (!secretObj.has("location")) return null;
 
-        JsonArray location = secretObj.get("location").getAsJsonArray();
+        return positions().waypoint(secretObj.getAsJsonArray("location"));
+    }
 
-        BlockPos relative = new BlockPos(location.get(0).getAsInt(), location.get(1).getAsInt(), location.get(2).getAsInt());
-        if ("f7boss".equals(name)) return relative;
+    RoutePositionCache positions() {
+        positionCache.updateContext(currentSecretRoute, RoomDirectionUtils.roomDirection(),
+                RoomDirectionUtils.getRoomAnchor(), "f7boss".equals(name));
+        return positionCache;
+    }
 
-        return RoomRotationUtils.relativeToActual(
-                relative,
-                RoomDirectionUtils.roomDirection(),
-                RoomDirectionUtils.roomCorner()
-        );
+    public void invalidatePositionCache() {
+        positionCache.invalidate();
     }
 
     public void renderLines() {
         try {
+            if (SRMConfig.get().lineType != SRMConfig.LineType.PARTICLES) return;
             if (currentSecretWaypoints != null && currentSecretWaypoints.has("locations")) {
-                List<BlockPos> lines = new LinkedList<>();
+                if (c < SRMConfig.get().tickInterval) {
+                    c++;
+                    return;
+                }
+                c = 0;
                 JsonArray lineLocations = currentSecretWaypoints.get("locations").getAsJsonArray();
+                List<BlockPos> lines = positions().particlePoints(lineLocations);
 
-                for (JsonElement lineLocationElement : lineLocations) {
-                    JsonArray loc = lineLocationElement.getAsJsonArray();
-                    BlockPos relative = new BlockPos(loc.get(0).getAsInt(), loc.get(1).getAsInt(), loc.get(2).getAsInt());
-
-                    BlockPos actual;
-                    if ("f7boss".equals(name)) {
-                        actual = relative;
-                    } else {
-                        actual = RoomRotationUtils.relativeToActual(relative, RoomDirectionUtils.roomDirection(), RoomDirectionUtils.roomCorner());
-                    }
-                    lines.add(actual);
-                }
-
-                if (SRMConfig.get().lineType == SRMConfig.LineType.PARTICLES) {
-                    if (c < SRMConfig.get().tickInterval) {
-                        c++;
-                        return;
-                    }
-                    c = 0;
-                    try {
-                        ParticleOptions particle = getParticleFromType(SRMConfig.get().particles);
-                        ParticleUtils.drawLineMultipleParticles(particle, lines);
-                    } catch (Exception e) {
-                        LogUtils.error(e);
-                    }
-                }
+                ParticleOptions particle = getParticleFromType(SRMConfig.get().particles);
+                ParticleUtils.drawLineMultipleParticles(particle, lines);
             }
         } catch (Exception e) {
             LogUtils.error(e);

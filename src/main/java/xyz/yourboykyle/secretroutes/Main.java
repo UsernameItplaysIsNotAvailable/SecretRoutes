@@ -32,6 +32,7 @@ import xyz.yourboykyle.secretroutes.config.SRMKeybinds;
 import xyz.yourboykyle.secretroutes.config.huds.CurrentRoomHUD;
 import xyz.yourboykyle.secretroutes.config.huds.RecordingHUD;
 import xyz.yourboykyle.secretroutes.dungeons.Room;
+import xyz.yourboykyle.secretroutes.dungeons.SecretUtils;
 import xyz.yourboykyle.secretroutes.dungeons.rendering.RenderingBackend;
 import xyz.yourboykyle.secretroutes.events.*;
 import xyz.yourboykyle.secretroutes.utils.*;
@@ -307,6 +308,7 @@ public class Main implements ClientModInitializer {
         OnPlayerTick.register();
 
         RenderingBackend.register();
+        SecretUtils.registerResourceReload();
 
         // Server connection
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {

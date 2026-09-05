@@ -27,7 +27,7 @@ import dev.isxander.yacl3.config.v2.api.ConfigClassHandler;
 import dev.isxander.yacl3.config.v2.api.SerialEntry;
 import dev.isxander.yacl3.config.v2.api.serializer.GsonConfigSerializerBuilder;
 
-import dev.isxander.yacl3.gui.utils.GuiUtils;
+import net.minecraft.client.Minecraft;
 
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.ChatFormatting;
@@ -407,7 +407,7 @@ public class SRMConfig {
                             .description(OptionDescription.of(Component.literal("Loads the profile named above from its JSON file and closes the menu")))
                             .action((screen, opt) -> {
                                 ConfigUtils.loadColorConfig(config.copyFileName);
-                                GuiUtils.setScreen(null);
+                                Minecraft.getInstance().setScreenAndShow(null);
                             })
                             .build());
 
@@ -420,7 +420,7 @@ public class SRMConfig {
                             .description(OptionDescription.of(Component.literal("Loads " + profileName + ".json and closes menu")))
                             .action((screen, opt) -> {
                                 ConfigUtils.loadColorConfig(profileName);
-                                GuiUtils.setScreen(null);
+                                Minecraft.getInstance().setScreenAndShow(null);
                             })
                             .build());
                 }

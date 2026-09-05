@@ -366,19 +366,19 @@ public class RenderingBackend {
     }
 
     public static void addWorldText(RenderTypes.WorldText worldText) {
-        if (!worldTexts.contains(worldText)) worldTexts.add(worldText);
+        worldTexts.add(worldText);
     }
 
     public static void addOutlinedBox(RenderTypes.OutlinedBox outlinedBox) {
-        if (!outlinedBoxes.contains(outlinedBox)) outlinedBoxes.add(outlinedBox);
+        outlinedBoxes.add(outlinedBox);
     }
 
     public static void addFilledBox(RenderTypes.FilledBox filledBox) {
-        if (!filledBoxes.contains(filledBox)) filledBoxes.add(filledBox);
+        filledBoxes.add(filledBox);
     }
 
     public static void addLine(RenderTypes.Line line) {
-        if (!lines.contains(line)) lines.add(line);
+        lines.add(line);
     }
 
     public static void addLinesFromPoints(org.joml.Vector3d[] points, Color color, float lineWidth, boolean throughWalls) {
@@ -389,7 +389,7 @@ public class RenderingBackend {
     }
 
     public static void addLineFromCursor(RenderTypes.LineFromCursor lineFromCursor) {
-        if (!linesFromCursor.contains(lineFromCursor)) linesFromCursor.add(lineFromCursor);
+        linesFromCursor.add(lineFromCursor);
     }
 
 }

@@ -25,28 +25,38 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import net.fabricmc.fabric.api.resource.v1.ResourceLoader;
+import net.fabricmc.fabric.api.resource.v1.reloader.SimpleReloadListener;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.resources.PreparableReloadListener;
 import org.joml.Vector3d;
 import xyz.yourboykyle.secretroutes.Main;
 import xyz.yourboykyle.secretroutes.config.SRMConfig;
 import xyz.yourboykyle.secretroutes.dungeons.rendering.RenderTypes;
 import xyz.yourboykyle.secretroutes.dungeons.rendering.RenderingBackend;
 import xyz.yourboykyle.secretroutes.utils.*;
-import xyz.yourboykyle.secretroutes.utils.multistorage.Triple;
 
 import java.awt.*;
 import java.io.InputStreamReader;
 import java.io.Reader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 public class SecretUtils {
     public static JsonArray secrets = null;
+    private static final RoomSecretCache SECRET_CACHE = new RoomSecretCache(() -> {
+        try (Reader reader = new InputStreamReader(
+                Main.class.getResourceAsStream("/assets/secretroutesmod/secretlocations.json"), StandardCharsets.UTF_8)) {
+            return JsonParser.parseReader(reader).getAsJsonObject();
+        }
+    }, LogUtils::error);
     public static boolean renderLever = false;
     public static BlockPos currentLeverPos = null;
     public static BlockPos lastInteract;
@@ -63,20 +73,6 @@ public class SecretUtils {
     public static int targetEtherwarpIndex = 0;
     private static BlockPos currentEtherwarpTarget;
 
-    private static Triple<Double, Double, Double> getActualSafe(double x, double y, double z) {
-        if (Main.currentRoom != null && "f7boss".equals(Main.currentRoom.name)) {
-            return new Triple<>(x, y, z);
-        }
-        return RoomRotationUtils.relativeToActual(x, y, z, RoomDirectionUtils.roomDirection(), RoomDirectionUtils.roomCorner());
-    }
-
-    private static BlockPos getActualSafe(BlockPos relative) {
-        if (Main.currentRoom != null && "f7boss".equals(Main.currentRoom.name)) {
-            return relative;
-        }
-        return RoomRotationUtils.relativeToActual(relative, RoomDirectionUtils.roomDirection(), RoomDirectionUtils.roomCorner());
-    }
-
     private static String getColorCode(SRMConfig.TextColor color) {
         return color.formatting.toString();
     }
@@ -92,8 +88,7 @@ public class SecretUtils {
     }
 
     private static BlockPos getActualWaypointPosition(JsonElement element) {
-        JsonArray loc = element.getAsJsonArray();
-        return getActualSafe(new BlockPos(loc.get(0).getAsInt(), loc.get(1).getAsInt(), loc.get(2).getAsInt()));
+        return Main.currentRoom.positions().waypoint(element.getAsJsonArray()).block();
     }
 
     private static boolean isPlayerNearEtherwarp(LocalPlayer player, BlockPos pos) {
@@ -169,10 +164,9 @@ public class SecretUtils {
 
         // Player to Secret Line
         if (SRMConfig.get().playerWaypointLine) {
-            BlockPos nextSecret = Main.currentRoom.getSecretLocation();
+            RoutePositionCache.Position nextSecret = Main.currentRoom.getSecretPosition();
             if (nextSecret != null) {
-                Vector3d point = new Vector3d(nextSecret.getX() + 0.5, nextSecret.getY() + 0.5, nextSecret.getZ() + 0.5);
-                RenderingBackend.addLineFromCursor(new RenderTypes.LineFromCursor(point, SRMConfig.get().playerToSecretLineColor, SRMConfig.get().playerToSecretLineWidth));
+                RenderingBackend.addLineFromCursor(new RenderTypes.LineFromCursor(nextSecret.center(), SRMConfig.get().playerToSecretLineColor, SRMConfig.get().playerToSecretLineWidth));
             }
         }
 
@@ -229,12 +223,14 @@ public class SecretUtils {
 
         boolean isActiveStep = (stepIndex == Main.currentRoom.currentSecretIndex);
         boolean renderPlayerToEtherwarp = isEtherwarp && isActiveStep && !SRMConfig.get().wholeRoute && SRMConfig.get().playerToEtherwarp;
+        RoutePositionCache positions = Main.currentRoom.positions();
 
         for (int i = 0; i < locations.size(); i++) {
             JsonElement element = locations.get(i);
             int currentNum = counter++;
 
-            BlockPos pos = getActualWaypointPosition(element);
+            RoutePositionCache.Position position = positions.waypoint(element.getAsJsonArray());
+            BlockPos pos = position.block();
 
             if (brokenBlocks.contains(pos)) continue;
 
@@ -244,12 +240,9 @@ public class SecretUtils {
                 }
             }
 
-            Vector3d position = new Vector3d(pos.getX(), pos.getY(), pos.getZ());
-
             if (renderPlayerToEtherwarp && pos.equals(currentEtherwarpTarget)) {
-                Vector3d point = new Vector3d(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5);
                 Color lineColor = SRMConfig.get().useEtherwarpColorForLine ? SRMConfig.get().etherWarp : SRMConfig.get().playerToEtherwarpLineColor;
-                RenderingBackend.addLineFromCursor(new RenderTypes.LineFromCursor(point, lineColor, SRMConfig.get().playerToEtherwarpLineWidth));
+                RenderingBackend.addLineFromCursor(new RenderTypes.LineFromCursor(position.center(), lineColor, SRMConfig.get().playerToEtherwarpLineWidth));
             }
 
             String textContent = null;
@@ -263,65 +256,21 @@ public class SecretUtils {
 
     private static void renderConnectingLines(JsonArray lineLocations) {
         if (!SRMConfig.get().modEnabled) return;
-        List<Vector3d> linePoints = new ArrayList<>();
-
-        for (JsonElement element : lineLocations) {
-            JsonArray loc = element.getAsJsonArray();
-            Triple<Double, Double, Double> linePos = getActualSafe(
-                    loc.get(0).getAsDouble(), loc.get(1).getAsDouble(), loc.get(2).getAsDouble()
-            );
-            linePoints.add(new Vector3d(linePos.getOne() + 0.5, linePos.getTwo() + 0.5, linePos.getThree() + 0.5));
-        }
-
-        RenderingBackend.addLinesFromPoints(linePoints.toArray(new Vector3d[0]), SRMConfig.get().lineColor, SRMConfig.get().width, SRMConfig.get().renderLinesThroughWalls);
+        RenderingBackend.addLinesFromPoints(Main.currentRoom.positions().linePoints(lineLocations),
+                SRMConfig.get().lineColor, SRMConfig.get().width, SRMConfig.get().renderLinesThroughWalls);
     }
 
     private static void renderEnderPearls(JsonObject waypoints, int stepIndex) {
-        JsonArray pearlLocations = waypoints.getAsJsonArray("enderpearls");
-        JsonArray enderpearlAnglesArray = waypoints.getAsJsonArray("enderpearlangles");
-
         int index = 0;
         Color enderpearlColor = colorForRouteStep(stepIndex, SRMConfig.get().enderpearls, SRMConfig.get().secondStepEnderpearls);
 
-        for (JsonElement element : pearlLocations) {
-            JsonArray loc = element.getAsJsonArray();
-            JsonArray angleObj = enderpearlAnglesArray.get(index).getAsJsonArray();
-
-            double posX = loc.get(0).getAsDouble();
-            double posY = loc.get(1).getAsDouble();
-            double posZ = loc.get(2).getAsDouble();
-
-            Triple<Double, Double, Double> positions = getActualSafe(posX, posY, posZ);
-            posX = positions.getOne() - 0.25;
-            posY = positions.getTwo();
-            posZ = positions.getThree() - 0.25;
-
-            Vector3d boxPos = new Vector3d(posX, posY, posZ);
-
+        for (RoutePositionCache.Pearl pearl : Main.currentRoom.positions().pearls(waypoints)) {
             String textContent = SRMConfig.get().enderpearlEnumToggle ? "ender pearl" : "ender pearl " + (index + 1);
 
-            submitBoxAndText(boxPos, enderpearlColor, SRMConfig.get().enderpearlFullBlock,
-                    SRMConfig.get().enderpearlBoxLineWidth, SRMConfig.get().enderpearlTextToggle, SRMConfig.get().enderpearlWaypointColor, textContent, SRMConfig.get().enderpearlTextSize, false);
+            submitBoxAndText(pearl.box(), enderpearlColor, SRMConfig.get().enderpearlFullBlock,
+                    SRMConfig.get().enderpearlBoxLineWidth, SRMConfig.get().enderpearlTextToggle, SRMConfig.get().enderpearlWaypointColor, textContent, SRMConfig.get().enderpearlTextSize, pearl.box());
 
-            double pitch = angleObj.get(0).getAsDouble();
-            double yaw = RotationUtils.relativeToActualYaw(angleObj.get(1).getAsFloat(), RoomDirectionUtils.roomDirection()) + 90;
-            double yawRad = Math.toRadians(yaw);
-            double pitchRad = Math.toRadians(pitch);
-
-            double length = 10.0D;
-            double x = -Math.sin(yawRad) * Math.cos(pitchRad);
-            double y = -Math.sin(pitchRad);
-            double z = Math.cos(yawRad) * Math.cos(pitchRad);
-
-            double sideLength = Math.sqrt(x * x + y * y + z * z);
-            x /= sideLength;
-            y /= sideLength;
-            z /= sideLength;
-
-            Vector3d start = new Vector3d(posX + 0.25F, posY + 1.62F, posZ + 0.25F);
-            Vector3d end = new Vector3d(posX + x * length + 0.25, posY + y * length + 1.62, posZ + z * length + 0.25);
-
-            RenderingBackend.addLine(new RenderTypes.Line(start, end, SRMConfig.get().pearlLineColor, SRMConfig.get().pearlLineWidth, true));
+            RenderingBackend.addLine(new RenderTypes.Line(pearl.start(), pearl.end(), SRMConfig.get().pearlLineColor, SRMConfig.get().pearlLineWidth, true));
             index++;
         }
     }
@@ -331,8 +280,7 @@ public class SecretUtils {
 
         String type = secret.get("type").getAsString();
         JsonArray loc = secret.get("location").getAsJsonArray();
-        BlockPos pos = getActualSafe(new BlockPos(loc.get(0).getAsInt(), loc.get(1).getAsInt(), loc.get(2).getAsInt()));
-        Vector3d position = new Vector3d(pos.getX(), pos.getY(), pos.getZ());
+        RoutePositionCache.Position position = Main.currentRoom.positions().waypoint(loc);
 
         switch (type) {
             case "interact":
@@ -361,8 +309,8 @@ public class SecretUtils {
 
         if (index2 == 0 && SRMConfig.get().startTextToggle) {
             JsonArray startCoords = waypoints.getAsJsonArray("locations").get(0).getAsJsonArray();
-            BlockPos pos = getActualSafe(new BlockPos(startCoords.get(0).getAsInt(), startCoords.get(1).getAsInt(), startCoords.get(2).getAsInt()));
-            RenderingBackend.addWorldText(new RenderTypes.WorldText(Component.literal(getColorCode(SRMConfig.get().startWaypointColor) + "Start"), new Vector3d(pos.getX(), pos.getY(), pos.getZ()), true, SRMConfig.get().startTextSize));
+            Vector3d pos = Main.currentRoom.positions().waypoint(startCoords).origin();
+            RenderingBackend.addWorldText(new RenderTypes.WorldText(Component.literal(getColorCode(SRMConfig.get().startWaypointColor) + "Start"), pos, true, SRMConfig.get().startTextSize));
         }
 
         if (index2 == Main.currentRoom.currentSecretRoute.size() - 1 && SRMConfig.get().exitTextToggle) {
@@ -370,8 +318,8 @@ public class SecretUtils {
                 JsonObject secret = waypoints.getAsJsonObject("secret");
                 if (secret.has("type") && secret.get("type").getAsString().equals("exitroute")) {
                     JsonArray loc = secret.getAsJsonArray("location");
-                    BlockPos pos = getActualSafe(new BlockPos(loc.get(0).getAsInt(), loc.get(1).getAsInt(), loc.get(2).getAsInt()));
-                    RenderingBackend.addWorldText(new RenderTypes.WorldText(Component.literal(getColorCode(SRMConfig.get().exitWaypointColor) + "Exit"), new Vector3d(pos.getX(), pos.getY(), pos.getZ()), true, SRMConfig.get().exitTextSize));
+                    Vector3d pos = Main.currentRoom.positions().waypoint(loc).origin();
+                    RenderingBackend.addWorldText(new RenderTypes.WorldText(Component.literal(getColorCode(SRMConfig.get().exitWaypointColor) + "Exit"), pos, true, SRMConfig.get().exitTextSize));
                 }
             }
         }
@@ -388,13 +336,9 @@ public class SecretUtils {
             if (!name.contains("Chest") && !name.contains("Bat") && !name.contains("Wither Essence") && !name.contains("Lever") && !name.contains("Item"))
                 continue;
 
-            int xPos = secretInfos.get("x").getAsInt();
-            int yPos = secretInfos.get("y").getAsInt();
-            int zPos = secretInfos.get("z").getAsInt();
-            if (secretLocations.contains(BlockUtils.blockPos(new BlockPos(xPos, yPos, zPos)))) continue;
-
-            Triple<Double, Double, Double> abs = getActualSafe(xPos, yPos, zPos);
-            Vector3d boxPos = new Vector3d(abs.getOne(), abs.getTwo(), abs.getThree());
+            RoutePositionCache.SecretMarker marker = Main.currentRoom.positions().secret(secretInfos);
+            if (secretLocations.contains(marker.relativeKey())) continue;
+            RoutePositionCache.Position boxPos = marker.position();
 
             if (name.contains("Chest") || name.contains("Wither Essence")) {
                 submitBoxAndText(boxPos, SRMConfig.get().secretsInteract, false, SRMConfig.get().secretBoxLineWidth, SRMConfig.get().interactTextToggle, SRMConfig.get().interactWaypointColor, "Interact", SRMConfig.get().interactTextSize, true);
@@ -421,12 +365,7 @@ public class SecretUtils {
                 String name = secretInfos.get("secretName").getAsString();
                 String category = secretInfos.get("category").getAsString();
                 if (category.equals("chest") && leverNum == null) {
-                    int x = secretInfos.get("x").getAsInt();
-                    int y = secretInfos.get("y").getAsInt();
-                    int z = secretInfos.get("z").getAsInt();
-
-                    Triple<Double, Double, Double> abs = getActualSafe(x, y, z);
-                    BlockPos pos = new BlockPos(abs.getOne().intValue(), abs.getTwo().intValue(), abs.getThree().intValue());
+                    BlockPos pos = Main.currentRoom.positions().secret(secretInfos).position().block();
                     if (BlockUtils.blockPos(pos).equals(BlockUtils.blockPos(lastInteract))) {
                         leverNum = name.split(" ")[0];
                         leverNumber = leverNum;
@@ -469,18 +408,15 @@ public class SecretUtils {
             if (currentLeverPos == null) {
                 ChatUtils.sendChatMessage("§cLever not found :(");
             } else {
-                Triple<Double, Double, Double> abs = getActualSafe(currentLeverPos.getX(), currentLeverPos.getY(), currentLeverPos.getZ());
+                Vector3d position = Main.currentRoom.positions().block(currentLeverPos).origin();
                 if (SRMConfig.get().secretsInteractFullBlock) {
-                    Vector3d position = new Vector3d(abs.getOne(), abs.getTwo(), abs.getThree());
                     RenderingBackend.addFilledBox(new RenderTypes.FilledBox(position, SRMConfig.get().secretsInteract, 1f, 1f, SRMConfig.get().renderLinesThroughWalls));
                 } else {
-                    Vector3d position = new Vector3d(abs.getOne(), abs.getTwo(), abs.getThree());
                     RenderingBackend.addOutlinedBox(new RenderTypes.OutlinedBox(position, SRMConfig.get().secretsInteract, 1f, 1f, SRMConfig.get().secretBoxLineWidth, SRMConfig.get().renderLinesThroughWalls));
                 }
 
                 if (SRMConfig.get().interactsTextToggle) {
                     Component text = Component.literal(getColorCode(SRMConfig.get().interactsWaypointColor) + "Locked chest lever");
-                    Vector3d position = new Vector3d(abs.getOne(), abs.getTwo(), abs.getThree());
                     RenderingBackend.addWorldText(new RenderTypes.WorldText(text, position, true, SRMConfig.get().interactsTextSize));
                 }
 
@@ -495,36 +431,42 @@ public class SecretUtils {
         }
     }
 
-    private static void submitBoxAndText(Vector3d pos, Color boxColor, boolean isFull, float boxLineWidth, boolean textToggle, SRMConfig.TextColor textColor, String textContent, float textSize, boolean shiftTextUp) {
+    private static void submitBoxAndText(RoutePositionCache.Position pos, Color boxColor, boolean isFull, float boxLineWidth, boolean textToggle, SRMConfig.TextColor textColor, String textContent, float textSize, boolean shiftTextUp) {
+        submitBoxAndText(pos.origin(), boxColor, isFull, boxLineWidth, textToggle, textColor, textContent, textSize,
+                shiftTextUp ? pos.center() : pos.origin());
+    }
+
+    private static void submitBoxAndText(Vector3d pos, Color boxColor, boolean isFull, float boxLineWidth, boolean textToggle, SRMConfig.TextColor textColor, String textContent, float textSize, Vector3d textPos) {
         if (isFull)
             RenderingBackend.addFilledBox(new RenderTypes.FilledBox(pos, boxColor, 1, 1, SRMConfig.get().renderLinesThroughWalls));
         else
             RenderingBackend.addOutlinedBox(new RenderTypes.OutlinedBox(pos, boxColor, 1, 1, boxLineWidth, SRMConfig.get().renderLinesThroughWalls));
 
         if (textToggle && textContent != null) {
-            Vector3d textPos = shiftTextUp ? new Vector3d(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5) : pos;
             RenderingBackend.addWorldText(new RenderTypes.WorldText(Component.literal(getColorCode(textColor) + textContent), textPos, true, textSize));
         }
     }
 
     public static JsonArray getSecrets() {
-        if (Main.currentRoom == null || Main.currentRoom.name == null) return null;
-
-        String roomName = Main.currentRoom.name.toLowerCase();
-        if (secrets == null) {
-            try (Reader reader = new InputStreamReader(Main.class.getResourceAsStream("/assets/secretroutesmod/secretlocations.json"))) {
-                JsonObject object = new JsonParser().parse(reader).getAsJsonObject();
-                for (String key : object.keySet()) {
-                    if (key.equalsIgnoreCase(roomName)) {
-                        secrets = object.getAsJsonArray(key);
-                        break;
-                    }
-                }
-            } catch (Exception e) {
-                LogUtils.error(e);
-            }
-        }
+        secrets = SECRET_CACHE.get(Main.currentRoom == null ? null : Main.currentRoom.name);
         return secrets;
+    }
+
+    public static void registerResourceReload() {
+        ResourceLoader.get(PackType.CLIENT_RESOURCES).registerReloadListener(
+                Identifier.fromNamespaceAndPath(Main.MODID, "secret_data"), new SimpleReloadListener<Void>() {
+                    @Override
+                    protected Void prepare(PreparableReloadListener.SharedState state) {
+                        return null;
+                    }
+
+                    @Override
+                    protected void apply(Void prepared, PreparableReloadListener.SharedState state) {
+                        SECRET_CACHE.invalidate();
+                        secrets = null;
+                        if (Main.currentRoom != null) Main.currentRoom.invalidatePositionCache();
+                    }
+                });
     }
 
     public static void resetValues() {

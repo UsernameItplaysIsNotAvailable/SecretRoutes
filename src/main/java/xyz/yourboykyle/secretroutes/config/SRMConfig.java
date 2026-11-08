@@ -66,6 +66,8 @@ public class SRMConfig {
     @SerialEntry
     public boolean renderComplete = false;
     @SerialEntry
+    public boolean onlyRenderAfterClear = false;
+    @SerialEntry
     public boolean wholeRoute = false;
     @SerialEntry
     public int visibleRouteSteps = 1;
@@ -86,7 +88,13 @@ public class SRMConfig {
     @SerialEntry
     public Map<String, RoomRouteProvider> roomRouteTypes = new HashMap<>();
 
-    // F7 Boss
+    // Boss Routes
+    @SerialEntry
+    public DungeonClass bossRouteClass = DungeonClass.HEALER;
+    @SerialEntry
+    public boolean autoClassDetection = false;
+
+    // Floor 7
     @SerialEntry
     public boolean pdRoutesEnabled = false;
     @SerialEntry
@@ -415,6 +423,10 @@ public class SRMConfig {
         return pdRouteMode != null ? pdRouteMode : BossRouteMode.ADG;
     }
 
+    public DungeonClass bossRouteClass() {
+        return bossRouteClass != null ? bossRouteClass : DungeonClass.HEALER;
+    }
+
     private RoomRouteSettings roomSettings(String roomName) {
         return new RoomRouteSettings(RoomToggleUtils.isRoomEnabled(roomName), RoomRouteOverrides.get(roomRouteTypes, roomName));
     }
@@ -559,7 +571,7 @@ public class SRMConfig {
                     .title(Component.literal("Secret Routes Config"))
                     .save(() -> {
                         HANDLER.save();
-                        // All bindings have now applied: reload once if the provider or boss roles changed.
+                        // All bindings have now applied. Reload once if route settings changed.
                         if (Main.currentRoom != null) Main.currentRoom.reloadIfRouteSettingsChanged();
                     })
 
@@ -585,29 +597,6 @@ public class SRMConfig {
                                     .action((screen, opt) -> {
                                         RouteUtils.checkRoutesFiles();
                                     })
-                                    .build())
-                            .group(OptionGroup.createBuilder()
-                                    .name(Component.literal("Predev Routes"))
-                                    .description(OptionDescription.of(Component.literal("Configure routes for doing predev. You should watch a tutorial as important information is not displayed in the route")))
-                                    .collapsed(true)
-                                    .option(Option.<Boolean>createBuilder()
-                                            .name(Component.literal("Enable Predev Routes"))
-                                            .description(OptionDescription.of(Component.literal("Master toggle for showing predev routes during the F7 Boss fight.")))
-                                            .binding(false, () -> config.pdRoutesEnabled, v -> config.pdRoutesEnabled = v)
-                                            .controller(TickBoxControllerBuilder::create)
-                                            .build())
-                                    .option(Option.<BossRouteMode>createBuilder()
-                                            .name(Component.literal("Roles"))
-                                            .description(OptionDescription.of(Component.literal("Choose ADG or Classic roles for the F7 predev route.\n\nClassic predev consists of both the second and third device.\n\nADG contains Checkpoint Maxor and the third device.\n\nLower level parties will usually use Classic Roles, while high level f7 or m7 parties will use ADG.\nNote that 'm7r' usually means Classic roles and not ADG.")))
-                                            .binding(BossRouteMode.ADG, config::bossRouteMode, v -> config.pdRouteMode = v)
-                                            .controller(opt -> EnumControllerBuilder.create(opt).enumClass(BossRouteMode.class))
-                                            .build())
-                                    .option(Option.<Boolean>createBuilder()
-                                            .name(Component.literal("Hide After Storm"))
-                                            .description(OptionDescription.of(Component.literal("Hide predev routes when Storm ends.")))
-                                            .binding(true, () -> config.pdHideAfterPhase2, v -> config.pdHideAfterPhase2 = v)
-                                            .controller(TickBoxControllerBuilder::create)
-                                            .build())
                                     .build())
                             .group(OptionGroup.createBuilder()
                                     .name(Component.literal("Line to Secret"))
@@ -726,12 +715,57 @@ public class SRMConfig {
                                             .build())
                                     .build())
                             .build())
+                    // Boss Routes
+                    .category(ConfigCategory.createBuilder()
+                            .name(Component.literal("Boss Routes"))
+                            .option(Option.<DungeonClass>createBuilder()
+                                    .name(Component.literal("Class"))
+                                    .description(OptionDescription.of(Component.literal("Set your Class for the Boss Route")))
+                                    .binding(DungeonClass.HEALER, config::bossRouteClass, v -> config.bossRouteClass = v)
+                                    .controller(opt -> EnumControllerBuilder.create(opt).enumClass(DungeonClass.class))
+                                    .build())
+                            .option(Option.<Boolean>createBuilder()
+                                    .name(Component.literal("Auto Class Detection"))
+                                    .description(OptionDescription.of(Component.literal("Detects the class you play automatically and overrides the Class setting")))
+                                    .binding(false, () -> config.autoClassDetection, v -> config.autoClassDetection = v)
+                                    .controller(TickBoxControllerBuilder::create)
+                                    .build())
+                            .group(OptionGroup.createBuilder()
+                                    .name(Component.literal("Floor 7"))
+                                    .description(OptionDescription.of(Component.literal("Configure routes for the Floor 7 boss fight.")))
+                                    .collapsed(true)
+                                    .option(Option.<Boolean>createBuilder()
+                                            .name(Component.literal("Enable Predev Routes"))
+                                            .description(OptionDescription.of(Component.literal("Master toggle for showing predev routes during the F7 Boss fight.")))
+                                            .binding(false, () -> config.pdRoutesEnabled, v -> config.pdRoutesEnabled = v)
+                                            .controller(TickBoxControllerBuilder::create)
+                                            .build())
+                                    .option(Option.<BossRouteMode>createBuilder()
+                                            .name(Component.literal("Roles"))
+                                            .description(OptionDescription.of(Component.literal("Choose ADG or Classic roles for the Floor 7 boss route.\n\nFor Healer, Classic predev covers the second and third devices. ADG covers Checkpoint Maxor and the third device.\n\nLower level parties usually use Classic roles, while higher level F7 and M7 parties usually use ADG. 'm7r' usually refers to Classic roles.")))
+                                            .binding(BossRouteMode.ADG, config::bossRouteMode, v -> config.pdRouteMode = v)
+                                            .controller(opt -> EnumControllerBuilder.create(opt).enumClass(BossRouteMode.class))
+                                            .build())
+                                    .option(Option.<Boolean>createBuilder()
+                                            .name(Component.literal("Hide After Storm"))
+                                            .description(OptionDescription.of(Component.literal("Hide predev routes when Storm ends.")))
+                                            .binding(true, () -> config.pdHideAfterPhase2, v -> config.pdHideAfterPhase2 = v)
+                                            .controller(TickBoxControllerBuilder::create)
+                                            .build())
+                                    .build())
+                            .build())
                     // Rendering
                     .category(ConfigCategory.createBuilder()
                             .name(Component.literal("Rendering"))
                             .option(Option.<Boolean>createBuilder()
+                                    .name(Component.literal("Only Render Cleared Rooms"))
+                                    .description(OptionDescription.of(Component.literal("Shows secret routes after the room has a white checkmark (all starred mobs killed). Green checkmarks follow Render Completed Rooms. Does not affect boss predev routes.")))
+                                    .binding(false, () -> config.onlyRenderAfterClear, v -> config.onlyRenderAfterClear = v)
+                                    .controller(TickBoxControllerBuilder::create)
+                                    .build())
+                            .option(Option.<Boolean>createBuilder()
                                     .name(Component.literal("Render Completed Rooms"))
-                                    .description(OptionDescription.of(Component.literal("Renders secrets even if the room is cleared")))
+                                    .description(OptionDescription.of(Component.literal("Renders secrets even if the room is completed")))
                                     .binding(false, () -> config.renderComplete, v -> config.renderComplete = v)
                                     .controller(TickBoxControllerBuilder::create)
                                     .build())

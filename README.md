@@ -45,6 +45,7 @@
         <li>Stonk waypoints</li>
         <li>Ender pearl waypoints/ Pearl launch angle lines </li>
         <li>Render entire route (instead of just one secret at a time)</li>
+        <li>Optionally show routes only after a white room-clear checkmark; completed rooms have a separate rendering toggle</li>
         <li>Render all secrets (Renders all secrets and levers in the room) </li>
         <li>Render multiple steps at the same time</li>
         <li>Rendering configurations for each Room</li>
@@ -116,4 +117,6 @@ Discord: [https://discord.gg/qmtQmz4V3X](https://discord.gg/qmtQmz4V3X)
 - @mrfast - help with various things
 - @johnd_ - supplied very nice reference code for help translating to 1.21, check out his mod here: https://modrinth.com/mod/hunchclient
 - @zzyyrraa - recorded routes + meows for custom secret noises
-- [odtheking/Odin](https://github.com/odtheking/Odin) - code for room detection and secret sounds
+- [odtheking/Odin](https://github.com/odtheking/Odin) - code for room detection, secret sounds, auto-class detection, and dungeon-map room-clear detection
+- [Eclipse-5214/Stella](https://github.com/Eclipse-5214/stella) - inspiration for rendering routes only after room clear
+- [SkyHanni](https://github.com/SkyHanniStudios/SkyHanni) - code for crosshair line rendering

@@ -33,6 +33,7 @@ package xyz.yourboykyle.secretroutes.dungeons.detection;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLevelEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.minecraft.client.Minecraft;
@@ -46,6 +47,7 @@ import xyz.yourboykyle.secretroutes.config.SRMConfig;
 import xyz.yourboykyle.secretroutes.dungeons.Room;
 import xyz.yourboykyle.secretroutes.dungeons.SecretUtils;
 import xyz.yourboykyle.secretroutes.events.OnEnterNewRoom;
+import xyz.yourboykyle.secretroutes.events.OnChatReceive;
 import xyz.yourboykyle.secretroutes.utils.DungeonUtil;
 import xyz.yourboykyle.secretroutes.utils.LocationUtils;
 import xyz.yourboykyle.secretroutes.utils.RoomToggleUtils;
@@ -91,16 +93,20 @@ public class DungeonScanner {
         ClientLifecycleEvents.CLIENT_STARTED.register(c -> loadResources());
         ClientPlayConnectionEvents.JOIN.register((h, s, c) -> reset());
         ClientPlayConnectionEvents.DISCONNECT.register((h, c) -> reset());
+        ClientLevelEvents.AFTER_CLIENT_LEVEL_CHANGE.register((c, level) -> reset());
 
         ClientTickEvents.END_CLIENT_TICK.register(mc -> {
             if (mc.player == null || mc.level == null) {
+                DungeonRoomClearTracker.reset();
                 clearScannerState();
                 return;
             }
             if (!LocationUtils.isInDungeons()) {
+                DungeonRoomClearTracker.reset();
                 clearScannerState();
                 return;
             }
+            DungeonRoomClearTracker.tick(mc);
             tick();
         });
     }
@@ -129,8 +135,7 @@ public class DungeonScanner {
         int playerZ = (int) client.player.getZ();
 
         // f7 detection
-        if (DungeonUtil.isF7() && playerX >= BOSS_MIN_X && playerX <= BOSS_MAX_X &&
-                playerZ >= BOSS_MIN_Z && playerZ <= BOSS_MAX_Z) {
+        if (DungeonUtil.isF7() && isInsideF7BossBounds()) {
 
             boolean shouldShow = shouldShowPredevRoute();
 
@@ -143,9 +148,7 @@ public class DungeonScanner {
                     OnEnterNewRoom.onEnterNewRoom(Main.currentRoom);
                 }
             } else {
-                if (Main.currentRoom != null && "f7boss".equals(Main.currentRoom.name)) {
-                    clearScannerState();
-                }
+                clearScannerState();
             }
 
             return;
@@ -202,6 +205,26 @@ public class DungeonScanner {
                 && (!SRMConfig.get().pdHideAfterPhase2 || !DungeonUtil.isPredevWindowClosed());
     }
 
+    public static boolean isInsideF7BossBounds() {
+        if (client.player == null || client.level == null) return false;
+        int playerX = (int) client.player.getX();
+        int playerZ = (int) client.player.getZ();
+        return playerX >= BOSS_MIN_X && playerX <= BOSS_MAX_X
+                && playerZ >= BOSS_MIN_Z && playerZ <= BOSS_MAX_Z;
+    }
+
+    public record RoomScanInfo(BlockPos centre, int core, RoomData matchedRoom) { }
+
+    public static RoomScanInfo getPlayerRoomScanInfo() {
+        if (client.player == null || client.level == null) return null;
+        Vector2i centre = getRoomCentre((int) client.player.getX(), (int) client.player.getZ());
+        if (!client.level.getChunkSource().hasChunk(centre.x >> 4, centre.y >> 4)) return null;
+
+        int height = getTopLayerOfRoom(centre);
+        int core = getCore(centre, height);
+        return new RoomScanInfo(new BlockPos(centre.x, height, centre.y), core, CORE_TO_ROOM_MAP.get(core));
+    }
+
     private static void enterRoom(DungeonRoom room) {
         clearTransitionState();
         currentRoom = room;
@@ -233,8 +256,7 @@ public class DungeonScanner {
         int playerZ = (int) client.player.getZ();
 
         if (Main.currentRoom != null && "f7boss".equals(Main.currentRoom.name)) {
-            return playerX >= BOSS_MIN_X && playerX <= BOSS_MAX_X &&
-                    playerZ >= BOSS_MIN_Z && playerZ <= BOSS_MAX_Z;
+            return isInsideF7BossBounds();
         }
 
         if (currentRoom == null) return false;
@@ -257,10 +279,24 @@ public class DungeonScanner {
             return false;
         }
 
+        if (!"f7boss".equals(Main.currentRoom.name)) {
+            SRMConfig config = SRMConfig.get();
+            if (!DungeonRoomClearTracker.getCheckmark(currentRoom).shouldRender(
+                    config.onlyRenderAfterClear, config.renderComplete, OnChatReceive.isAllFound())) {
+                return false;
+            }
+            if (config.onlyRenderAfterClear && !isPlayerInCurrentRoom()) return false;
+        }
+
         if (isPlayerInCurrentRoom()) {
             return true;
         }
         return visualGraceDeadlineNanos < 0L || System.nanoTime() - visualGraceDeadlineNanos < 0L;
+    }
+
+    public static boolean isCurrentRoomCompleted() {
+        return OnChatReceive.isAllFound()
+                || DungeonRoomClearTracker.getCheckmark(currentRoom) == DungeonMapState.Checkmark.GREEN;
     }
 
     private static void invalidateActiveRoom() {
@@ -431,6 +467,7 @@ public class DungeonScanner {
     }
 
     private static void reset() {
+        DungeonRoomClearTracker.reset();
         if (Main.currentRoom != null) Main.currentRoom.invalidatePersonalBest();
         currentRoom = null;
         passedRooms.clear();

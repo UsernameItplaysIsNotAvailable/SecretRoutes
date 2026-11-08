@@ -26,11 +26,13 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import net.minecraft.core.BlockPos;
 import xyz.yourboykyle.secretroutes.config.BossRouteMode;
+import xyz.yourboykyle.secretroutes.config.DungeonClass;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 final class RouteVariantSelector {
     private RouteVariantSelector() {
@@ -42,19 +44,19 @@ final class RouteVariantSelector {
     record Selection(int index, double distanceSquared) {
     }
 
-    static List<RouteVariant> parseVariants(JsonObject rawData, String roomName) {
-        return parseVariants(rawData, roomName, BossRouteMode.ADG);
-    }
-
-    static List<RouteVariant> parseVariants(JsonObject rawData, String roomName, BossRouteMode bossRouteMode) {
+    static List<RouteVariant> parseVariants(
+            JsonObject rawData, String roomName, BossRouteMode bossRouteMode, DungeonClass bossRouteClass
+    ) {
         if (rawData == null || roomName == null) return List.of();
 
         String normalizedRoomName = roomName.toLowerCase(Locale.ROOT);
-        BossRouteMode mode = bossRouteMode != null ? bossRouteMode : BossRouteMode.ADG;
+        if (normalizedRoomName.equals("f7boss")) {
+            return parseBossRoute(rawData, bossRouteMode, bossRouteClass);
+        }
+
         List<RouteVariant> variants = new ArrayList<>();
 
         for (var entry : rawData.entrySet()) {
-            if (normalizedRoomName.equals("f7boss") && !entry.getKey().equalsIgnoreCase(mode.routeKey())) continue;
             int variantNumber = getVariantNumber(entry.getKey(), normalizedRoomName);
             if (variantNumber < 0) continue;
 
@@ -66,6 +68,25 @@ final class RouteVariantSelector {
                 .comparingInt(RouteVariant::variantNumber)
                 .thenComparing(RouteVariant::jsonKey, String.CASE_INSENSITIVE_ORDER));
         return List.copyOf(variants);
+    }
+
+    private static List<RouteVariant> parseBossRoute(JsonObject rawData, BossRouteMode mode, DungeonClass dungeonClass) {
+        var entry = findRoute(rawData, mode.routeKey(dungeonClass));
+        // Older route files only contain the healer routes under their original keys.
+        if (entry == null && dungeonClass == DungeonClass.HEALER) {
+            entry = findRoute(rawData, mode.legacyRouteKey());
+        }
+        if (entry == null) return List.of();
+
+        RouteVariant variant = parseVariant(entry.getKey(), 0, entry.getValue());
+        return variant == null ? List.of() : List.of(variant);
+    }
+
+    private static Map.Entry<String, JsonElement> findRoute(JsonObject rawData, String key) {
+        for (var entry : rawData.entrySet()) {
+            if (entry.getKey().equalsIgnoreCase(key)) return entry;
+        }
+        return null;
     }
 
     static Selection selectClosest(List<RouteVariant> variants, BlockPos playerPosition) {

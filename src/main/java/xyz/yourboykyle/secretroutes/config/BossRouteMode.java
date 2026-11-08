@@ -6,23 +6,29 @@ import net.minecraft.network.chat.Component;
 
 /** Not based on distance this time like the rest :D */
 public enum BossRouteMode implements NameableEnum {
-    ADG("ADG", "f7boss"),
-    CLASSIC("Classic roles", "f7boss:1");
+    ADG("ADG", "ADG", "f7boss"),
+    CLASSIC("Classic roles", "classic", "f7boss:1");
 
     private final String label;
-    private final String routeKey;
+    private final String routeSuffix;
+    private final String legacyRouteKey;
 
-    BossRouteMode(String label, String routeKey) {
+    BossRouteMode(String label, String routeSuffix, String legacyRouteKey) {
         this.label = label;
-        this.routeKey = routeKey;
+        this.routeSuffix = routeSuffix;
+        this.legacyRouteKey = legacyRouteKey;
     }
 
     public String label() {
         return label;
     }
 
-    public String routeKey() {
-        return routeKey;
+    public String routeKey(DungeonClass dungeonClass) {
+        return "f7boss:" + dungeonClass.routeSuffix() + "_" + routeSuffix;
+    }
+
+    public String legacyRouteKey() {
+        return legacyRouteKey;
     }
 
     @Override

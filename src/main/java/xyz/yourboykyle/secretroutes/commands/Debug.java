@@ -34,11 +34,21 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.commands.CommandBuildContext;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import xyz.yourboykyle.secretroutes.Main;
+import xyz.yourboykyle.secretroutes.config.DungeonClass;
 import xyz.yourboykyle.secretroutes.config.SRMConfig;
+import xyz.yourboykyle.secretroutes.dungeons.Room;
 import xyz.yourboykyle.secretroutes.dungeons.SecretUtils;
+import xyz.yourboykyle.secretroutes.dungeons.detection.DungeonRoom;
+import xyz.yourboykyle.secretroutes.dungeons.detection.DungeonScanner;
+import xyz.yourboykyle.secretroutes.dungeons.detection.DungeonRoomClearTracker;
+import xyz.yourboykyle.secretroutes.dungeons.detection.RoomComponent;
 import xyz.yourboykyle.secretroutes.utils.*;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 import static net.fabricmc.fabric.api.client.command.v2.ClientCommands.argument;
@@ -52,6 +62,7 @@ public class Debug {
 
     private static void registerCommands(CommandDispatcher<FabricClientCommandSource> dispatcher, CommandBuildContext registryAccess) {
         dispatcher.register(literal("srmdebug")
+                .executes(Debug::executeRoom)
                 .then(literal("lever")
                         .executes(Debug::executeLever))
                 .then(literal("pos")
@@ -70,6 +81,79 @@ public class Debug {
                                 .executes(Debug::executeVarGet)
                                 .then(argument("value", StringArgumentType.word())
                                         .executes(Debug::executeVarSet)))));
+    }
+
+    private static int executeRoom(CommandContext<FabricClientCommandSource> context) {
+        Minecraft client = Minecraft.getInstance();
+        LocalPlayer player = client.player;
+        if (player == null || client.level == null) {
+            context.getSource().sendError(Component.literal("Join a world to inspect the current room."));
+            return 0;
+        }
+
+        SRMConfig config = SRMConfig.get();
+        Room routeRoom = Main.currentRoom;
+        DungeonRoom scannedRoom = DungeonScanner.currentRoom;
+        boolean inDungeons = LocationUtils.isInDungeons();
+        boolean inBossBounds = DungeonScanner.isInsideF7BossBounds();
+        boolean inF7Boss = inDungeons && DungeonUtil.isF7() && inBossBounds;
+        List<String> report = new ArrayList<>();
+        report.add("SecretRoutes room debug");
+        report.add("Position: " + player.blockPosition().toShortString());
+        report.add("SkyBlock: " + LocationUtils.isOnSkyblock() + ", in dungeons: " + inDungeons
+                + ", F7/M7 detected: " + DungeonUtil.isF7());
+        report.add("Inside F7 boss bounds: " + inBossBounds + ", F7 boss detected: " + inF7Boss);
+        report.add("Detected room: " + (inF7Boss ? "f7boss" : RoomDirectionUtils.roomName()));
+        if (scannedRoom != null) {
+            report.add("Type: " + scannedRoom.data.type() + ", shape: " + scannedRoom.data.shape()
+                    + ", secrets: " + scannedRoom.data.secrets() + ", crypts: " + scannedRoom.data.crypts()
+                    + ", trapped chests: " + scannedRoom.data.trappedChests());
+            report.add("Rotation: " + scannedRoom.rotation + ", terracotta anchor: " + scannedRoom.clayPos.toShortString());
+            report.add("Components: " + scannedRoom.roomComponents.stream()
+                    .sorted(Comparator.comparingInt(RoomComponent::x).thenComparingInt(RoomComponent::z)).toList());
+        }
+
+        if (!inF7Boss) {
+            DungeonScanner.RoomScanInfo scan = DungeonScanner.getPlayerRoomScanInfo();
+            if (scan == null) {
+                report.add("Tile scan: unavailable (centre chunk unloaded)");
+            } else {
+                report.add("Tile centre: " + scan.centre().getX() + ", " + scan.centre().getZ()
+                        + ", height: " + scan.centre().getY() + ", core: " + scan.core());
+                report.add("Core match: " + (scan.matchedRoom() == null ? "Unknown" : scan.matchedRoom().name()));
+            }
+        }
+
+        String activeRoomName = routeRoom == null ? null : routeRoom.name;
+        report.add("Active route room: " + (activeRoomName == null ? "None" : activeRoomName));
+        report.add(DungeonRoomClearTracker.debugStatus());
+        report.add("Room checkmark: " + DungeonRoomClearTracker.getCheckmark(scannedRoom)
+                + ", only render after clear: " + config.onlyRenderAfterClear
+                + ", render completed rooms: " + config.renderComplete);
+        if (activeRoomName != null) {
+            report.add("Route provider: " + config.effectiveRouteType(activeRoomName).getDisplayName().getString()
+                    + ", selected route: " + routeRoom.getSelectedRouteStatus());
+            int steps = routeRoom.currentSecretRoute == null ? 0 : routeRoom.currentSecretRoute.size();
+            report.add("Route steps: " + steps + ", current step index: " + routeRoom.currentSecretIndex);
+        }
+        report.add("Mod enabled: " + config.modEnabled + ", player in active room: " + DungeonScanner.isPlayerInCurrentRoom()
+                + ", room render check: " + DungeonScanner.shouldRenderCurrentRoom());
+
+        if (DungeonUtil.isF7()) {
+            DungeonClass detectedClass = DungeonUtil.getDetectedClass();
+            DungeonClass effectiveClass = config.autoClassDetection && detectedClass != null
+                    ? detectedClass : config.bossRouteClass();
+            report.add("Boss class: " + effectiveClass + ", manual: " + config.bossRouteClass()
+                    + ", detected: " + (detectedClass == null ? "Unknown" : detectedClass)
+                    + ", auto detection: " + config.autoClassDetection);
+            report.add("Boss roles: " + config.bossRouteMode().label()
+                    + ", requested route: " + config.bossRouteMode().routeKey(effectiveClass));
+            report.add("Predev enabled: " + config.pdRoutesEnabled + ", hide after Storm: " + config.pdHideAfterPhase2
+                    + ", predev window closed: " + DungeonUtil.isPredevWindowClosed());
+        }
+
+        context.getSource().sendFeedback(Component.literal(String.join("\n", report)).withStyle(ChatFormatting.AQUA));
+        return 1;
     }
 
     private static int executeLever(CommandContext<FabricClientCommandSource> context) {

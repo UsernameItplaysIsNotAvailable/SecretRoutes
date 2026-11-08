@@ -53,6 +53,10 @@ public class OnChatReceive {
         return allFound;
     }
 
+    public static void resetRoomSecrets() {
+        allFound = false;
+    }
+
     private boolean handleChatReceive(Component message, boolean overlay) {
         if (!LocationUtils.isOnSkyblock()) {
             return true;
@@ -62,6 +66,7 @@ public class OnChatReceive {
 
         // Handle overlay/actionbar messages
         if (overlay) {
+            if (!DungeonScanner.isPlayerInCurrentRoom()) return true;
             Matcher matcher = Pattern.compile("§7(?<roomCollectedSecrets>\\d+)/(?<roomTotalSecrets>\\d+) Secrets").matcher(unformatted);
             if (matcher.find()) {
                 int roomSecrets = Integer.parseInt(matcher.group("roomTotalSecrets"));

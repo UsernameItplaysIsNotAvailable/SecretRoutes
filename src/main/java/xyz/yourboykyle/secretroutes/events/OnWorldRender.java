@@ -54,7 +54,7 @@ public class OnWorldRender {
                 resetEtherwarpAimState();
             }
 
-            boolean allSecretsFound = !isPredevRoute && OnChatReceive.isAllFound();
+            boolean allSecretsFound = !isPredevRoute && DungeonScanner.isCurrentRoomCompleted();
             if (allSecretsFound) {
                 resetEtherwarpAimState();
                 /*

@@ -29,6 +29,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleOptions;
 import xyz.yourboykyle.secretroutes.Main;
 import xyz.yourboykyle.secretroutes.config.BossRouteMode;
+import xyz.yourboykyle.secretroutes.config.DungeonClass;
 import xyz.yourboykyle.secretroutes.config.SRMConfig;
 import xyz.yourboykyle.secretroutes.dungeons.detection.DungeonScanner;
 import xyz.yourboykyle.secretroutes.events.OnSecretComplete;
@@ -61,6 +62,7 @@ public class Room {
     private long loadRequestId;
     private SRMConfig.RouteType configuredRouteType;
     private BossRouteMode configuredBossRouteMode;
+    private DungeonClass configuredBossRouteClass;
     private RouteAttempt personalBestAttempt;
     int c = 0;
 
@@ -276,7 +278,21 @@ public class Room {
         if (configuredRouteType != config.effectiveRouteType(name)
                 || ("f7boss".equals(name) && configuredBossRouteMode != config.bossRouteMode())) {
             reloadConfiguredRoute();
+        } else {
+            reloadIfBossRouteClassChanged();
         }
+    }
+
+    /** Called on the client thread when a dungeon class is detected or the route settings change. */
+    public void reloadIfBossRouteClassChanged() {
+        if ("f7boss".equals(name) && configuredBossRouteClass != effectiveBossRouteClass(SRMConfig.get())) {
+            reloadConfiguredRoute();
+        }
+    }
+
+    private static DungeonClass effectiveBossRouteClass(SRMConfig config) {
+        DungeonClass detectedClass = config.autoClassDetection ? DungeonUtil.getDetectedClass() : null;
+        return detectedClass != null ? detectedClass : config.bossRouteClass();
     }
 
     public void reloadConfiguredRoute() {
@@ -308,19 +324,24 @@ public class Room {
         Minecraft client = Minecraft.getInstance();
         ClientLevel level = client.level;
         String roomName = name;
-        boolean bossRoom = "f7boss".equals(roomName);
-        BossRouteMode bossRouteMode = SRMConfig.get().bossRouteMode();
+        boolean bossRoom = "f7boss".equalsIgnoreCase(roomName);
+        SRMConfig config = SRMConfig.get();
+        BossRouteMode bossRouteMode = bossRoom ? config.bossRouteMode() : null;
+        DungeonClass bossRouteClass = bossRoom ? effectiveBossRouteClass(config) : null;
         configuredBossRouteMode = bossRouteMode;
+        configuredBossRouteClass = bossRouteClass;
         ROUTE_LOADER.execute(() -> {
             try {
                 JsonObject rawData = RouteFileCache.SHARED.roomData(Path.of(filePath), roomName);
                 List<RouteVariantSelector.RouteVariant> loadedVariants =
-                        RouteVariantSelector.parseVariants(rawData, roomName, bossRouteMode);
+                        RouteVariantSelector.parseVariants(rawData, roomName, bossRouteMode, bossRouteClass);
                 client.execute(() -> {
                     if (!isCurrentLoad(requestId, level)) return;
                     installLoadedVariants(loadedVariants);
                     if (loadedVariants.isEmpty() && (notifyMissing || bossRoom)) {
-                        String routeDescription = bossRoom ? bossRouteMode.label() + " predev" : roomName;
+                        String routeDescription = bossRoom
+                                ? bossRouteClass.getDisplayName().getString() + " predev (" + bossRouteMode.label() + ")"
+                                : roomName;
                         ChatUtils.sendChatMessage("§eNo route for " + routeDescription + " in " + new File(filePath).getName() + ".");
                     }
                 });

@@ -41,7 +41,7 @@ import java.util.TreeSet;
  */
 public class RoomToggleUtils {
 
-    // The F7 boss route has its own toggle in the Predev Routes group
+    // The Floor 7 boss route has its own toggle in Boss Routes.
     private static final String BOSS_ROOM = "f7boss";
 
     // Shapes as they appear in rooms.json, in the order they should show up in the config

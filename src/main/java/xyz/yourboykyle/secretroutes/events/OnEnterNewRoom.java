@@ -31,6 +31,7 @@ public class OnEnterNewRoom {
             }
 
             Main.currentRoom = room;
+            OnChatReceive.resetRoomSecrets();
             room.startPersonalBestVisit();
             SecretUtils.secrets = null;
             SecretUtils.secretLocations = new ArrayList<>();

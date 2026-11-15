@@ -85,6 +85,7 @@
         <details>
             <summary><strong>/srmdebug</strong> -> <em>some debug commands and variable modification</em></summary>
             <ul>
+                <li><strong>roomInfo</strong> -> Shows the current dungeon room, rotation, tile core, and active route</li>
                 <li><strong>lever</strong> -> Sends some info about the rendered locked chest lever</li>
                 <li><strong>pos</strong> -> Send info about current player position</li>
                 <li><strong>var</strong> -> print the current value of a variable, or change it to the value of the next argument</li>

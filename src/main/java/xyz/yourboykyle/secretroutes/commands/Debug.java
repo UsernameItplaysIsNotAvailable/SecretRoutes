@@ -62,7 +62,9 @@ public class Debug {
 
     private static void registerCommands(CommandDispatcher<FabricClientCommandSource> dispatcher, CommandBuildContext registryAccess) {
         dispatcher.register(literal("srmdebug")
-                .executes(Debug::executeRoom)
+                .executes(Debug::executeRoomInfo)
+                .then(literal("roomInfo")
+                        .executes(Debug::executeRoomInfo))
                 .then(literal("lever")
                         .executes(Debug::executeLever))
                 .then(literal("pos")
@@ -83,7 +85,7 @@ public class Debug {
                                         .executes(Debug::executeVarSet)))));
     }
 
-    private static int executeRoom(CommandContext<FabricClientCommandSource> context) {
+    private static int executeRoomInfo(CommandContext<FabricClientCommandSource> context) {
         Minecraft client = Minecraft.getInstance();
         LocalPlayer player = client.player;
         if (player == null || client.level == null) {
@@ -93,17 +95,19 @@ public class Debug {
 
         SRMConfig config = SRMConfig.get();
         Room routeRoom = Main.currentRoom;
-        DungeonRoom scannedRoom = DungeonScanner.currentRoom;
         boolean inDungeons = LocationUtils.isInDungeons();
+        boolean playerInActiveRoom = DungeonScanner.isPlayerInCurrentRoom();
         boolean inBossBounds = DungeonScanner.isInsideF7BossBounds();
         boolean inF7Boss = inDungeons && DungeonUtil.isF7() && inBossBounds;
+        DungeonRoom scannedRoom = playerInActiveRoom && !inF7Boss ? DungeonScanner.currentRoom : null;
         List<String> report = new ArrayList<>();
         report.add("SecretRoutes room debug");
         report.add("Position: " + player.blockPosition().toShortString());
         report.add("SkyBlock: " + LocationUtils.isOnSkyblock() + ", in dungeons: " + inDungeons
                 + ", F7/M7 detected: " + DungeonUtil.isF7());
         report.add("Inside F7 boss bounds: " + inBossBounds + ", F7 boss detected: " + inF7Boss);
-        report.add("Detected room: " + (inF7Boss ? "f7boss" : RoomDirectionUtils.roomName()));
+        String detectedRoom = scannedRoom == null ? "Unknown" : scannedRoom.getName();
+        report.add("Detected room: " + (inF7Boss ? "f7boss" : detectedRoom));
         if (scannedRoom != null) {
             report.add("Type: " + scannedRoom.data.type() + ", shape: " + scannedRoom.data.shape()
                     + ", secrets: " + scannedRoom.data.secrets() + ", crypts: " + scannedRoom.data.crypts()
@@ -113,7 +117,7 @@ public class Debug {
                     .sorted(Comparator.comparingInt(RoomComponent::x).thenComparingInt(RoomComponent::z)).toList());
         }
 
-        if (!inF7Boss) {
+        if (inDungeons && !inF7Boss) {
             DungeonScanner.RoomScanInfo scan = DungeonScanner.getPlayerRoomScanInfo();
             if (scan == null) {
                 report.add("Tile scan: unavailable (centre chunk unloaded)");
@@ -136,7 +140,7 @@ public class Debug {
             int steps = routeRoom.currentSecretRoute == null ? 0 : routeRoom.currentSecretRoute.size();
             report.add("Route steps: " + steps + ", current step index: " + routeRoom.currentSecretIndex);
         }
-        report.add("Mod enabled: " + config.modEnabled + ", player in active room: " + DungeonScanner.isPlayerInCurrentRoom()
+        report.add("Mod enabled: " + config.modEnabled + ", player in active room: " + playerInActiveRoom
                 + ", room render check: " + DungeonScanner.shouldRenderCurrentRoom());
 
         if (DungeonUtil.isF7()) {
